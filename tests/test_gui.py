@@ -35,7 +35,10 @@ def test_gui_full_coverage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     cfg_file = tmp_path / "config.json"
     monkeypatch.setattr("app.gui.CONFIG_FILE", cfg_file)
 
-    root = tk.Tk()
+    try:
+        root = tk.Tk()
+    except tk.TclError as e:
+        pytest.skip(f"Tkinter display not available: {e}")
     root.withdraw()
     gui = AutoMapGeneratorGUI(root)
 

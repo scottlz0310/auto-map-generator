@@ -13,7 +13,9 @@
 
 ### Fixed
 - **CIビルド修正**: `pyproject.toml` の `dev` 依存関係に `ruff` および `basedpyright` を追加し、CIでのツール未検出エラーを解消
+- **CI GUIテスト修正**: Ubuntu CI 上での Tkinter ディスプレイ不在による `TclError` を防ぐため `xvfb-run` を導入し、テストにフォールバック処理を追加
 - **pre-commitフック修正**: `.pre-commit-config.yaml` の basedpyright リポジトリ URL を `basedpyright-pre-commit-mirror` に修正
 - **Git管理対象の整理**: `usage.txt` を git 追跡対象外にし、`.gitignore` に追加
+
 
 

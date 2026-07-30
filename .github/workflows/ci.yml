@@ -43,4 +43,11 @@ jobs:
         run: uv run basedpyright
 
       - name: Run pytest with coverage
-        run: uv run pytest --cov=app --cov=main
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run --auto-servernum uv run pytest --cov=app --cov=main
+          else
+            uv run pytest --cov=app --cov=main
+          fi
+        shell: bash
+
