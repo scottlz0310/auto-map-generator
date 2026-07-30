@@ -10,3 +10,10 @@
 - **CLI機能の改善**: `main.py` のモジュール化・リファクタリング
 - **品質・テスト基盤**: `pytest` + `pytest-cov` による包括的な単体テスト (カバレッジ94%), `ruff` フォーマット/リンター, `basedpyright` 型チェック全適用
 - **CI / Release ワークフロー**: GitHub Actions (`.github/workflows/ci.yml`, `release.yml`) および `.pre-commit-config.yaml` の追加
+
+### Fixed
+- **CIビルド修正**: `pyproject.toml` の `dev` 依存関係に `ruff` および `basedpyright` を追加し、CIでのツール未検出エラーを解消
+- **pre-commitフック修正**: `.pre-commit-config.yaml` の basedpyright リポジトリ URL を `basedpyright-pre-commit-mirror` に修正
+- **Git管理対象の整理**: `usage.txt` を git 追跡対象外にし、`.gitignore` に追加
+
+
