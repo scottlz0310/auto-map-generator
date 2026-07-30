@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "auto-map-generator"
+version = "0.1.0"
+description = "写真のGPS位置情報から、写真ごとの個別マップ画像を自動生成・一括保存するCLIツール"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+
+dependencies = [
+    "pillow>=10.0.0",
+]
+
+[project.scripts]
+auto-map-generator = "main:main"
+auto-map-generator-gui = "app.gui:main"
+
+[tool.hatch.build.targets.wheel]
+include = ["main.py", "app"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+[tool.basedpyright]
+typeCheckingMode = "basic"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+
+

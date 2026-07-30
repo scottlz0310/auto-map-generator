@@ -1,0 +1,1 @@
+uv run auto-map-generator -i <path> -w 1033 -h 600 -z 18

@@ -1,0 +1,29 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments & Dependencies
+.venv/
+venv/
+ENV/
+env/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Testing & Coverage
+.coverage
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+coverage.xml
+
+# Local Runtime Data & Outputs
+config.json
+map_outputs/
+scratch/
