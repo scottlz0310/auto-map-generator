@@ -11,7 +11,7 @@ license = "MIT"
 requires-python = ">=3.10"
 
 dependencies = [
-    "pillow>=10.0.1",
+    "pillow>=12.3.0",
 ]
 
 [project.scripts]
@@ -24,8 +24,8 @@ include = ["main.py", "app"]
 [dependency-groups]
 dev = [
     "basedpyright>=1.39.9",
-    "pytest>=8.0.2",
-    "pytest-cov>=4.1.0",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
     "ruff>=0.16.0",
 ]
 
