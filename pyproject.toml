@@ -23,8 +23,10 @@ include = ["main.py", "app"]
 
 [dependency-groups]
 dev = [
+    "basedpyright>=1.39.9",
     "pytest>=8.0.0",
     "pytest-cov>=4.0.0",
+    "ruff>=0.16.0",
 ]
 
 [tool.basedpyright]
