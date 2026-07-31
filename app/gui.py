@@ -8,7 +8,14 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 from typing import Any
 
-from app.core import BASE_DIR, DEFAULT_PIN_PATH, process_images
+from PIL import Image, ImageTk
+
+from app.core import (
+    BASE_DIR,
+    DEFAULT_PIN_PATH,
+    process_images,
+)
+from app.services import PreviewService
 
 CONFIG_FILE = BASE_DIR / "config.json"
 
@@ -50,15 +57,24 @@ class AutoMapGeneratorGUI:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("Auto Map Generator - 写真個別マップ自動生成")
-        self.root.geometry("680x720")
-        self.root.minsize(580, 600)
+        self.root.geometry("1040x720")
+        self.root.minsize(840, 600)
 
         self.config: dict[str, Any] = load_config()
         self.msg_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.is_running = False
         self.cancel_requested = False
 
+        self.preview_timer: str | None = None
+        self._input_dir_timer: str | None = None
+        self.gps_files: list[Path] = []
+        self.selected_preview_path: Path | None = None
+        self.preview_photo_image: ImageTk.PhotoImage | None = None
+        self.current_preview_pil_image: Image.Image | None = None
+        self._preview_generation: int = 0
+
         self._create_widgets()
+        self._setup_traces()
         self._load_values_from_config()
 
         # スレッド安全なGUI更新ループ
@@ -70,13 +86,20 @@ class AutoMapGeneratorGUI:
         style = ttk.Style()
         style.theme_use("clam")
 
-        main_frame = ttk.Frame(self.root, padding="15")
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        # 全体を左右2カラムに配置
+        container = ttk.Frame(self.root, padding="10")
+        container.pack(fill=tk.BOTH, expand=True)
+
+        left_frame = ttk.Frame(container)
+        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+
+        right_frame = ttk.Frame(container, width=420)
+        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=False, padx=(5, 0))
 
         # ----------------------------------------------------
-        # 1. フォルダ設定セクション
+        # 1. フォルダ設定セクション (左側)
         # ----------------------------------------------------
-        folder_frame = ttk.LabelFrame(main_frame, text=" フォルダ設定 ", padding="10")
+        folder_frame = ttk.LabelFrame(left_frame, text=" フォルダ設定 ", padding="10")
         folder_frame.pack(fill=tk.X, pady=(0, 10))
 
         # 入力フォルダ
@@ -113,10 +136,10 @@ class AutoMapGeneratorGUI:
         _ = folder_frame.columnconfigure(1, weight=1)
 
         # ----------------------------------------------------
-        # 2. マップ・生成設定セクション
+        # 2. マップ・生成設定セクション (左側)
         # ----------------------------------------------------
         map_frame = ttk.LabelFrame(
-            main_frame, text=" マップ生成オプション ", padding="10"
+            left_frame, text=" マップ生成オプション ", padding="10"
         )
         map_frame.pack(fill=tk.X, pady=(0, 10))
 
@@ -132,8 +155,8 @@ class AutoMapGeneratorGUI:
             to=4000,
             increment=50,
             textvariable=self.width_var,
-            width=8,
-        ).pack(side=tk.LEFT, padx=(0, 20))
+            width=6,
+        ).pack(side=tk.LEFT, padx=(0, 15))
 
         ttk.Label(size_frame, text="縦幅 (px):").pack(side=tk.LEFT, padx=(0, 5))
         self.height_var = tk.IntVar(value=600)
@@ -143,15 +166,13 @@ class AutoMapGeneratorGUI:
             to=4000,
             increment=50,
             textvariable=self.height_var,
-            width=8,
-        ).pack(side=tk.LEFT, padx=(0, 20))
+            width=6,
+        ).pack(side=tk.LEFT, padx=(0, 15))
 
-        ttk.Label(size_frame, text="ズームレベル (1-19):").pack(
-            side=tk.LEFT, padx=(0, 5)
-        )
+        ttk.Label(size_frame, text="ズーム (1-19):").pack(side=tk.LEFT, padx=(0, 5))
         self.zoom_var = tk.IntVar(value=15)
         ttk.Spinbox(
-            size_frame, from_=1, to=19, increment=1, textvariable=self.zoom_var, width=5
+            size_frame, from_=1, to=19, increment=1, textvariable=self.zoom_var, width=4
         ).pack(side=tk.LEFT)
 
         # ピン画像
@@ -178,9 +199,9 @@ class AutoMapGeneratorGUI:
         _ = map_frame.columnconfigure(1, weight=1)
 
         # ----------------------------------------------------
-        # 3. 実行制御セクション
+        # 3. 実行制御セクション (左側)
         # ----------------------------------------------------
-        btn_frame = ttk.Frame(main_frame)
+        btn_frame = ttk.Frame(left_frame)
         btn_frame.pack(fill=tk.X, pady=(0, 10))
 
         self.start_btn = ttk.Button(
@@ -194,9 +215,9 @@ class AutoMapGeneratorGUI:
         self.cancel_btn.pack(side=tk.RIGHT, padx=(5, 0))
 
         # ----------------------------------------------------
-        # 4. 進捗＆ログエリア
+        # 4. 進捗＆ログエリア (左側)
         # ----------------------------------------------------
-        progress_frame = ttk.LabelFrame(main_frame, text=" 処理進捗 ", padding="10")
+        progress_frame = ttk.LabelFrame(left_frame, text=" 処理進捗 ", padding="10")
         progress_frame.pack(fill=tk.BOTH, expand=True)
 
         self.status_label = ttk.Label(progress_frame, text="待機中...")
@@ -206,9 +227,51 @@ class AutoMapGeneratorGUI:
         self.progressbar.pack(fill=tk.X, pady=(0, 8))
 
         self.log_text = scrolledtext.ScrolledText(
-            progress_frame, height=12, state=tk.DISABLED, font=("Consolas", 9)
+            progress_frame, height=10, state=tk.DISABLED, font=("Consolas", 9)
         )
         self.log_text.pack(fill=tk.BOTH, expand=True)
+
+        # ----------------------------------------------------
+        # 5. リアルタイムプレビューセクション (右側)
+        # ----------------------------------------------------
+        preview_frame = ttk.LabelFrame(right_frame, text=" プレビュー ", padding="10")
+        preview_frame.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(preview_frame, text="プレビュー対象写真:").pack(
+            anchor=tk.W, pady=(0, 2)
+        )
+        self.preview_combo = ttk.Combobox(preview_frame, state="readonly")
+        self.preview_combo.pack(fill=tk.X, pady=(0, 8))
+        self.preview_combo.bind("<<ComboboxSelected>>", self._on_preview_photo_selected)
+
+        # プレビュー表示キャンバス/ラベル容器
+        self.preview_canvas_frame = ttk.Frame(
+            preview_frame, relief="sunken", borderwidth=1
+        )
+        self.preview_canvas_frame.pack(fill=tk.BOTH, expand=True)
+
+        self.preview_label = ttk.Label(
+            self.preview_canvas_frame,
+            text="入力フォルダを選択すると\nここにプレビューが表示されます。",
+            anchor=tk.CENTER,
+            justify=tk.CENTER,
+        )
+        self.preview_label.pack(fill=tk.BOTH, expand=True)
+        self.preview_label.bind("<Configure>", self._on_preview_resize)
+
+        self.preview_info_label = ttk.Label(
+            preview_frame, text="GPS情報: 未選択", font=("", 8), foreground="gray"
+        )
+        self.preview_info_label.pack(anchor=tk.W, pady=(5, 0))
+
+    def _setup_traces(self) -> None:
+        """各設定値変更のイベント監視を設定（プレビュー自動更新用）"""
+        self.input_dir_var.trace_add("write", self._on_input_dir_changed)
+        self.width_var.trace_add("write", self._schedule_preview_update)
+        self.height_var.trace_add("write", self._schedule_preview_update)
+        self.zoom_var.trace_add("write", self._schedule_preview_update)
+        self.pin_image_var.trace_add("write", self._schedule_preview_update)
+        self.tile_url_var.trace_add("write", self._schedule_preview_update)
 
     def _load_values_from_config(self) -> None:
         self.input_dir_var.set(str(self.config.get("input_dir", "")))
@@ -224,13 +287,23 @@ class AutoMapGeneratorGUI:
                 )
             )
         )
+        self._refresh_gps_files_list()
 
     def _save_current_config(self) -> None:
         self.config["input_dir"] = self.input_dir_var.get()
         self.config["output_dir"] = self.output_dir_var.get()
-        self.config["width"] = self.width_var.get()
-        self.config["height"] = self.height_var.get()
-        self.config["zoom"] = self.zoom_var.get()
+        try:
+            self.config["width"] = self.width_var.get()
+        except tk.TclError:
+            pass
+        try:
+            self.config["height"] = self.height_var.get()
+        except tk.TclError:
+            pass
+        try:
+            self.config["zoom"] = self.zoom_var.get()
+        except tk.TclError:
+            pass
         self.config["pin_image"] = self.pin_image_var.get()
         self.config["tile_url"] = self.tile_url_var.get()
         save_config(self.config)
@@ -255,6 +328,112 @@ class AutoMapGeneratorGUI:
         if file_path:
             self.pin_image_var.set(file_path)
             self._save_current_config()
+
+    def _on_input_dir_changed(self, *args: Any) -> None:
+        if self._input_dir_timer is not None:
+            self.root.after_cancel(self._input_dir_timer)
+        self._input_dir_timer = self.root.after(300, self._refresh_gps_files_list)
+
+    def _refresh_gps_files_list(self) -> None:
+        self._input_dir_timer = None
+        input_dir_str = self.input_dir_var.get().strip()
+        if not input_dir_str:
+            self.gps_files = []
+            self.preview_combo["values"] = []
+            self.preview_combo.set("")
+            self.selected_preview_path = None
+            self._show_preview_placeholder("入力フォルダが未指定です。")
+            return
+
+        input_dir = Path(input_dir_str)
+        if not input_dir.exists() or not input_dir.is_dir():
+            self.gps_files = []
+            self.preview_combo["values"] = []
+            self.preview_combo.set("")
+            self.selected_preview_path = None
+            self._show_preview_placeholder("フォルダが存在しません。")
+            return
+
+        def worker() -> None:
+            gps_info_list = PreviewService.fetch_gps_images(input_dir)
+            self.msg_queue.put(("GPS_LIST_DONE", (gps_info_list, input_dir_str)))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_preview_photo_selected(self, event: Any) -> None:
+        idx = self.preview_combo.current()
+        if 0 <= idx < len(self.gps_files):
+            self.selected_preview_path = self.gps_files[idx]
+            self._schedule_preview_update()
+
+    def _schedule_preview_update(self, *args: Any) -> None:
+        if self.preview_timer is not None:
+            self.root.after_cancel(self.preview_timer)
+        self.preview_timer = self.root.after(300, self._start_preview_render)
+
+    def _start_preview_render(self) -> None:
+        self.preview_timer = None
+        if not self.selected_preview_path:
+            return
+
+        try:
+            width = self.width_var.get()
+            height = self.height_var.get()
+            zoom = self.zoom_var.get()
+        except tk.TclError:
+            return  # 入力途中の不正値の場合は無視
+
+        pin_path_str = self.pin_image_var.get().strip()
+        pin_path = Path(pin_path_str) if pin_path_str else DEFAULT_PIN_PATH
+        tile_url = self.tile_url_var.get().strip()
+        img_path = self.selected_preview_path
+
+        self.preview_info_label.config(text="プレビュー描画中...")
+
+        self._preview_generation += 1
+        generation = self._preview_generation
+
+        def worker() -> None:
+            result = PreviewService.generate_preview(
+                image_path=img_path,
+                width=width,
+                height=height,
+                zoom=zoom,
+                pin_path=pin_path,
+                tile_url=tile_url,
+            )
+            self.msg_queue.put(("PREVIEW_DONE", (generation, result)))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _show_preview_placeholder(self, text: str) -> None:
+        self.current_preview_pil_image = None
+        self.preview_photo_image = None
+        self.preview_label.config(image="", text=text)
+        self.preview_info_label.config(text="GPS情報: 未選択")
+
+    def _on_preview_resize(self, event: Any) -> None:
+        if self.current_preview_pil_image:
+            self._render_scaled_preview_image()
+
+    def _render_scaled_preview_image(self) -> None:
+        if not self.current_preview_pil_image:
+            return
+
+        canvas_w = max(self.preview_canvas_frame.winfo_width(), 100)
+        canvas_h = max(self.preview_canvas_frame.winfo_height(), 100)
+
+        img = self.current_preview_pil_image
+        orig_w, orig_h = img.size
+
+        # アスペクト比維持の縮小計算
+        scale = min(canvas_w / orig_w, canvas_h / orig_h)
+        new_w = max(1, int(orig_w * scale))
+        new_h = max(1, int(orig_h * scale))
+
+        resized_img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        self.preview_photo_image = ImageTk.PhotoImage(resized_img)
+        self.preview_label.config(image=self.preview_photo_image, text="")
 
     def _log(self, text: str) -> None:
         self.log_text.config(state=tk.NORMAL)
@@ -290,6 +469,16 @@ class AutoMapGeneratorGUI:
         pin_path_str = self.pin_image_var.get().strip()
         pin_path = Path(pin_path_str) if pin_path_str else DEFAULT_PIN_PATH
 
+        try:
+            width = self.width_var.get()
+            height = self.height_var.get()
+            zoom = self.zoom_var.get()
+        except tk.TclError:
+            _ = messagebox.showerror(
+                "入力エラー", "数値項目の入力形式を確認してください。"
+            )
+            return
+
         self._save_current_config()
 
         self.is_running = True
@@ -306,9 +495,9 @@ class AutoMapGeneratorGUI:
             args=(
                 input_dir,
                 output_dir,
-                self.width_var.get(),
-                self.height_var.get(),
-                self.zoom_var.get(),
+                width,
+                height,
+                zoom,
                 pin_path,
                 self.tile_url_var.get(),
             ),
@@ -422,6 +611,48 @@ class AutoMapGeneratorGUI:
                             "完了",
                             f"地図生成が完了しました！\n成功: {success_count}枚 / 合計: {fin_total}枚",
                         )
+
+                elif msg_type == "PREVIEW_DONE":
+                    generation, result = data
+                    if generation != self._preview_generation:
+                        continue
+                    if result.success and result.image is not None:
+                        self.current_preview_pil_image = result.image
+                        self._render_scaled_preview_image()
+                        if result.location:
+                            self.preview_info_label.config(
+                                text=f"位置情報: 緯度 {result.location[0]:.5f}, 経度 {result.location[1]:.5f}"
+                            )
+                        else:
+                            self.preview_info_label.config(
+                                text=f"位置情報: {result.message}"
+                            )
+                    else:
+                        self._show_preview_placeholder(result.message)
+
+                elif msg_type == "GPS_LIST_DONE":
+                    gps_info_list, req_input_dir_str = data
+                    if req_input_dir_str != self.input_dir_var.get().strip():
+                        continue
+
+                    if not gps_info_list:
+                        self.gps_files = []
+                        self.preview_combo["values"] = []
+                        self.preview_combo.set("")
+                        self.selected_preview_path = None
+                        self._show_preview_placeholder(
+                            "GPS情報を含む写真が見つかりません。"
+                        )
+                        continue
+
+                    self.gps_files = [item[0] for item in gps_info_list]
+                    combo_values = [p.name for p in self.gps_files]
+                    self.preview_combo["values"] = combo_values
+
+                    if combo_values:
+                        self.preview_combo.current(0)
+                        self.selected_preview_path = self.gps_files[0]
+                        self._schedule_preview_update()
 
         except queue.Empty:
             pass

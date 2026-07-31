@@ -8,3 +8,7 @@
 - [x] 品質ツールの全チェック適応 (`ruff check`, `ruff format`, `basedpyright`)
 - [x] ドキュメントの充実化 ([README.md](README.md), [docs/gui_plan.md](docs/gui_plan.md))
 - [x] リポジトリ設定ファイルの準備 (`.gitignore`, `LICENSE`, `.github/workflows/`, `.pre-commit-config.yaml`, `renovate.json`)
+- [x] マップ生成前のプレビュー表示機能の追加 (Issue #5) ([app/core.py](app/core.py), [app/gui.py](app/gui.py))
+- [x] Codecov によるカバレッジ連携と CI 統合 (`.github/workflows/ci.yml`, `codecov.yml`)
+
+

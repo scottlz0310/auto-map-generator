@@ -97,4 +97,54 @@ def test_gui_full_coverage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     gui.msg_queue.put(("FINISHED", (1, 1, 2)))
     gui._process_queue()
 
+    # PREVIEW_DONE メッセージのシミュレートテスト
+    from PIL import Image
+
+    from app.services import PreviewResult
+
+    dummy_img = Image.new("RGB", (100, 100), "red")
+    res_ok = PreviewResult(
+        image=dummy_img,
+        location=(35.68, 139.76),
+        message="緯度 35.68, 経度 139.76",
+        success=True,
+    )
+    gui.msg_queue.put(("PREVIEW_DONE", (0, res_ok)))
+    gui._process_queue()
+    assert gui.current_preview_pil_image is not None
+
+    res_fail = PreviewResult(
+        image=None,
+        location=None,
+        message="GPS情報なし",
+        success=False,
+    )
+    gui.msg_queue.put(("PREVIEW_DONE", (0, res_fail)))
+    gui._process_queue()
+    assert gui.current_preview_pil_image is None
+
+    # GPS_LIST_DONE メッセージのシミュレートテスト
+    # 1. パス不一致（古い結果）の破棄
+    gui.input_dir_var.set("/path/current")
+    gui.msg_queue.put(
+        ("GPS_LIST_DONE", ([(Path("/path/old/img1.jpg"), 35.0, 139.0)], "/path/old"))
+    )
+    gui._process_queue()
+
+    # 2. パス一致・空リスト
+    gui.msg_queue.put(("GPS_LIST_DONE", ([], "/path/current")))
+    gui._process_queue()
+    assert gui.gps_files == []
+
+    # 3. パス一致・正常リスト
+    gui.msg_queue.put(
+        (
+            "GPS_LIST_DONE",
+            ([(Path("/path/current/img1.jpg"), 35.0, 139.0)], "/path/current"),
+        )
+    )
+    gui._process_queue()
+    assert len(gui.gps_files) == 1
+    assert gui.selected_preview_path == Path("/path/current/img1.jpg")
+
     gui._on_close()

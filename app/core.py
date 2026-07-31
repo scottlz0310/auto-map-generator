@@ -1,5 +1,6 @@
 """写真のEXIF解析および地図合成処理を提供するコアモジュール。"""
 
+import hashlib
 import io
 import math
 import os
@@ -87,7 +88,8 @@ def latlon_to_tile_xy(lat: float, lon: float, zoom: int) -> tuple[float, float]:
 def fetch_tile(x: int, y: int, z: int, tile_url_template: str) -> Image.Image:
     """指定タイルの画像を取得（ローカルキャッシュ対応）"""
     TILE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    cache_file = TILE_CACHE_DIR / f"{z}_{x}_{y}.png"
+    url_hash = hashlib.md5(tile_url_template.encode("utf-8")).hexdigest()[:8]
+    cache_file = TILE_CACHE_DIR / f"{url_hash}_{z}_{x}_{y}.png"
 
     if cache_file.exists():
         try:
@@ -282,3 +284,23 @@ def process_images(
                 on_progress(idx, total, img_path.name, "ERROR", f"生成エラー: {e}")
 
     return success_count, skip_count, total
+
+
+def list_gps_images(input_dir: Path) -> list[tuple[Path, float, float]]:
+    """入力フォルダ配下の写真ファイルから、GPS情報(lat, lon)を取得できたファイルのリストを返す。"""
+    if not input_dir.exists() or not input_dir.is_dir():
+        return []
+
+    results: list[tuple[Path, float, float]] = []
+    image_files = sorted(
+        [
+            p
+            for p in input_dir.iterdir()
+            if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS
+        ]
+    )
+    for p in image_files:
+        loc = extract_gps_location(p)
+        if loc:
+            results.append((p, loc[0], loc[1]))
+    return results
