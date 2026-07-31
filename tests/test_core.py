@@ -11,6 +11,7 @@ from app.core import (
     extract_gps_location,
     fetch_tile,
     latlon_to_tile_xy,
+    list_gps_images,
     process_images,
     render_map,
 )
@@ -200,3 +201,31 @@ def test_process_images_workflow(tmp_path: Path) -> None:
         cancel_check=cancel_check,
     )
     assert success_c == 0
+
+
+def test_list_gps_images(tmp_path: Path) -> None:
+    in_dir = tmp_path / "in"
+    in_dir.mkdir()
+
+    # 1. 存在しないディレクトリ
+    assert list_gps_images(tmp_path / "non_existent") == []
+
+    # 2. GPS付き画像とGPSなし画像の用意
+    gps_path = in_dir / "photo1.jpg"
+    img1 = Image.new("RGB", (50, 50), "yellow")
+    exif = img1.getexif()
+    gps_ifd = exif.get_ifd(0x8825)
+    gps_ifd[1], gps_ifd[2], gps_ifd[3], gps_ifd[4] = (
+        "N",
+        (35, 40, 52),
+        "E",
+        (139, 46, 1),
+    )
+    img1.save(gps_path, exif=exif)
+
+    nogps_path = in_dir / "photo2.jpg"
+    Image.new("RGB", (50, 50), "black").save(nogps_path)
+
+    gps_list = list_gps_images(in_dir)
+    assert len(gps_list) == 1
+    assert gps_list[0][0] == gps_path

@@ -282,3 +282,23 @@ def process_images(
                 on_progress(idx, total, img_path.name, "ERROR", f"生成エラー: {e}")
 
     return success_count, skip_count, total
+
+
+def list_gps_images(input_dir: Path) -> list[tuple[Path, float, float]]:
+    """入力フォルダ配下の写真ファイルから、GPS情報(lat, lon)を取得できたファイルのリストを返す。"""
+    if not input_dir.exists() or not input_dir.is_dir():
+        return []
+
+    results: list[tuple[Path, float, float]] = []
+    image_files = sorted(
+        [
+            p
+            for p in input_dir.iterdir()
+            if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS
+        ]
+    )
+    for p in image_files:
+        loc = extract_gps_location(p)
+        if loc:
+            results.append((p, loc[0], loc[1]))
+    return results

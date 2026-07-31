@@ -92,9 +92,30 @@ def test_gui_full_coverage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     gui.msg_queue.put(("FINISHED", (0, 0, 0)))
     gui._process_queue()
 
-    # キャンセル時の通知テスト
-    gui.cancel_requested = True
-    gui.msg_queue.put(("FINISHED", (1, 1, 2)))
+    # PREVIEW_DONE メッセージのシミュレートテスト
+    from PIL import Image
+
+    from app.services import PreviewResult
+
+    dummy_img = Image.new("RGB", (100, 100), "red")
+    res_ok = PreviewResult(
+        image=dummy_img,
+        location=(35.68, 139.76),
+        message="緯度 35.68, 経度 139.76",
+        success=True,
+    )
+    gui.msg_queue.put(("PREVIEW_DONE", res_ok))
     gui._process_queue()
+    assert gui.current_preview_pil_image is not None
+
+    res_fail = PreviewResult(
+        image=None,
+        location=None,
+        message="GPS情報なし",
+        success=False,
+    )
+    gui.msg_queue.put(("PREVIEW_DONE", res_fail))
+    gui._process_queue()
+    assert gui.current_preview_pil_image is None
 
     gui._on_close()
