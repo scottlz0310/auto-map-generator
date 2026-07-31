@@ -1,7 +1,9 @@
 """app.services モジュールのユニットテスト"""
 
+import io
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from app.services import PreviewService
@@ -29,7 +31,28 @@ def test_preview_service_fetch_gps_images(tmp_path: Path) -> None:
     assert results[0][0] == gps_path
 
 
-def test_preview_service_generate_preview_valid(tmp_path: Path) -> None:
+def test_preview_service_generate_preview_valid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.core.TILE_CACHE_DIR", tmp_path / "tiles")
+
+    def mock_urlopen(*args, **kwargs):
+        class MockResponse:
+            def read(self):
+                img = Image.new("RGBA", (256, 256), "green")
+                buf = io.BytesIO()
+                img.save(buf, format="PNG")
+                return buf.getvalue()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                pass
+
+        return MockResponse()
+
+    monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
     in_dir = tmp_path / "in"
     in_dir.mkdir()
 

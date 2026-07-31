@@ -103,17 +103,21 @@ def test_fetch_tile_cache_and_network(
 
         return MockResp()
 
+    import hashlib
     import io
     import urllib.request
 
     monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
 
-    tile_success = fetch_tile(10, 20, 5, "https://example.com/{z}/{x}/{y}.png")
+    url_template = "https://example.com/{z}/{x}/{y}.png"
+    tile_success = fetch_tile(10, 20, 5, url_template)
     assert tile_success.size == (256, 256)
-    assert (cache_dir / "5_10_20.png").exists()
+
+    url_hash = hashlib.md5(url_template.encode("utf-8")).hexdigest()[:8]
+    assert (cache_dir / f"{url_hash}_5_10_20.png").exists()
 
     # 既存キャッシュからの読み込みテスト
-    tile_from_cache = fetch_tile(10, 20, 5, "https://example.com/{z}/{x}/{y}.png")
+    tile_from_cache = fetch_tile(10, 20, 5, url_template)
     assert tile_from_cache.size == (256, 256)
 
 

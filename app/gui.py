@@ -15,7 +15,7 @@ from app.core import (
     DEFAULT_PIN_PATH,
     process_images,
 )
-from app.services import PreviewResult, PreviewService
+from app.services import PreviewService
 
 CONFIG_FILE = BASE_DIR / "config.json"
 
@@ -66,10 +66,12 @@ class AutoMapGeneratorGUI:
         self.cancel_requested = False
 
         self.preview_timer: str | None = None
+        self._input_dir_timer: str | None = None
         self.gps_files: list[Path] = []
         self.selected_preview_path: Path | None = None
         self.preview_photo_image: ImageTk.PhotoImage | None = None
         self.current_preview_pil_image: Image.Image | None = None
+        self._preview_generation: int = 0
 
         self._create_widgets()
         self._setup_traces()
@@ -328,9 +330,12 @@ class AutoMapGeneratorGUI:
             self._save_current_config()
 
     def _on_input_dir_changed(self, *args: Any) -> None:
-        self._refresh_gps_files_list()
+        if self._input_dir_timer is not None:
+            self.root.after_cancel(self._input_dir_timer)
+        self._input_dir_timer = self.root.after(300, self._refresh_gps_files_list)
 
     def _refresh_gps_files_list(self) -> None:
+        self._input_dir_timer = None
         input_dir_str = self.input_dir_var.get().strip()
         if not input_dir_str:
             self.gps_files = []
@@ -349,23 +354,11 @@ class AutoMapGeneratorGUI:
             self._show_preview_placeholder("フォルダが存在しません。")
             return
 
-        gps_info_list = PreviewService.fetch_gps_images(input_dir)
-        if not gps_info_list:
-            self.gps_files = []
-            self.preview_combo["values"] = []
-            self.preview_combo.set("")
-            self.selected_preview_path = None
-            self._show_preview_placeholder("GPS情報を含む写真が見つかりません。")
-            return
+        def worker() -> None:
+            gps_info_list = PreviewService.fetch_gps_images(input_dir)
+            self.msg_queue.put(("GPS_LIST_DONE", (gps_info_list, input_dir_str)))
 
-        self.gps_files = [item[0] for item in gps_info_list]
-        combo_values = [p.name for p in self.gps_files]
-        self.preview_combo["values"] = combo_values
-
-        if combo_values:
-            self.preview_combo.current(0)
-            self.selected_preview_path = self.gps_files[0]
-            self._schedule_preview_update()
+        threading.Thread(target=worker, daemon=True).start()
 
     def _on_preview_photo_selected(self, event: Any) -> None:
         idx = self.preview_combo.current()
@@ -397,6 +390,9 @@ class AutoMapGeneratorGUI:
 
         self.preview_info_label.config(text="プレビュー描画中...")
 
+        self._preview_generation += 1
+        generation = self._preview_generation
+
         def worker() -> None:
             result = PreviewService.generate_preview(
                 image_path=img_path,
@@ -406,7 +402,7 @@ class AutoMapGeneratorGUI:
                 pin_path=pin_path,
                 tile_url=tile_url,
             )
-            self.msg_queue.put(("PREVIEW_DONE", result))
+            self.msg_queue.put(("PREVIEW_DONE", (generation, result)))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -617,7 +613,9 @@ class AutoMapGeneratorGUI:
                         )
 
                 elif msg_type == "PREVIEW_DONE":
-                    result: PreviewResult = data
+                    generation, result = data
+                    if generation != self._preview_generation:
+                        continue
                     if result.success and result.image is not None:
                         self.current_preview_pil_image = result.image
                         self._render_scaled_preview_image()
@@ -631,6 +629,30 @@ class AutoMapGeneratorGUI:
                             )
                     else:
                         self._show_preview_placeholder(result.message)
+
+                elif msg_type == "GPS_LIST_DONE":
+                    gps_info_list, req_input_dir_str = data
+                    if req_input_dir_str != self.input_dir_var.get().strip():
+                        continue
+
+                    if not gps_info_list:
+                        self.gps_files = []
+                        self.preview_combo["values"] = []
+                        self.preview_combo.set("")
+                        self.selected_preview_path = None
+                        self._show_preview_placeholder(
+                            "GPS情報を含む写真が見つかりません。"
+                        )
+                        continue
+
+                    self.gps_files = [item[0] for item in gps_info_list]
+                    combo_values = [p.name for p in self.gps_files]
+                    self.preview_combo["values"] = combo_values
+
+                    if combo_values:
+                        self.preview_combo.current(0)
+                        self.selected_preview_path = self.gps_files[0]
+                        self._schedule_preview_update()
 
         except queue.Empty:
             pass
