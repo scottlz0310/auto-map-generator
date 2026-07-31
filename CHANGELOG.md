@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- **Codecov 導入**: CI ワークフロー (`.github/workflows/ci.yml`) への `codecov/codecov-action` の組み込み、`coverage.xml` レポート自動生成、および `codecov.yml` 設定の追加
 - **プレビュー機能とサービス層の分離**: マップ生成前のプレビュー表示機能の追加とアーキテクチャ層の整理 (Issue #5)
   - `app/services.py`: `PreviewService` および `PreviewResult` を新規追加し、GUI非依存でテスタブルなプレビュービジネスロジック層を分離
   - `app/core.py`: ドメイン層として `list_gps_images` を提供し、純粋な画像・地図合成処理に専念
